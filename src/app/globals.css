@@ -1,0 +1,69 @@
+@import "tailwindcss";
+
+:root {
+  --background: #093545;
+  --foreground: #ffffff;
+  --primary: #2bd17e;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-montserrat);
+  --font-mono: var(--font-montserrat);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #093545;
+    --foreground: #ffffff;
+  }
+}
+
+* {
+  font-family: var(--font-montserrat), "Montserrat", sans-serif;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-montserrat), "Montserrat", sans-serif;
+}
+
+input[type="text"],
+input[type="email"],
+input[type="password"] {
+  background-color: #224957;
+  color: var(--foreground);
+  font-family: var(--font-montserrat), "Montserrat", sans-serif;
+}
+
+input[type="text"]::placeholder,
+input[type="email"]::placeholder,
+input[type="password"]::placeholder {
+  font-style: Regular;
+  color: var(--foreground);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 24px;
+  letter-spacing: 0%;
+  font-family: var(--font-montserrat), "Montserrat", sans-serif;
+}
+
+button.btn-primary,
+button.active-navigation-button {
+  background-color: var(--primary);
+  color: var(--foreground);
+  border: none;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 24px;
+  letter-spacing: 0%;
+  font-family: var(--font-montserrat), "Montserrat", sans-serif;
+}
+
+button.inactive-navigation-button {
+  background-color: #092c39;
+  color: var(--foreground);
+  font-family: var(--font-montserrat), "Montserrat", sans-serif;
+}
