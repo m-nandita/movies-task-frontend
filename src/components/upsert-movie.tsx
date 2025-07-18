@@ -3,10 +3,22 @@
 import React, { useState, useRef, useEffect } from "react";
 import { toast } from "react-toastify";
 import { useForm } from "react-hook-form";
+import { useMutation } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { z } from "zod";
-import axiosInstance from "@/src/utils/axios.js";
+import axiosInstance from "../utils/axios";
 import Image from "next/image";
+
+const UpsertMovieSchema = z.object({
+  title: z.string().min(1, "Title is required").optional(),
+  publishedYear: z.string().min(4, "Published year is required").optional(),
+  poster: z.instanceof(File).optional(),
+});
+
+interface UpsertMovieProps {
+  mode: "create" | "edit";
+  movie?: Movie;
+}
 
 const MovieSchema = z.object({
   title: z.string().min(1, "Title is required"),
@@ -16,11 +28,6 @@ const MovieSchema = z.object({
 });
 
 type Movie = z.infer<typeof MovieSchema>;
-
-interface UpsertMovieProps {
-  mode: "create" | "edit";
-  movie?: Movie;
-}
 
 const UpsertMovie = ({ mode, movie }: UpsertMovieProps) => {
   const [imagePreview, setImagePreview] = useState<string | null>(
@@ -47,11 +54,9 @@ const UpsertMovie = ({ mode, movie }: UpsertMovieProps) => {
   });
 
   useEffect(() => {
-    if (movie && mode === "edit") {
+    if (movie && mode === "edit" && !movieData) {
       setMovieData(movie);
-      setImagePreview(
-        `${process.env.NEXT_PUBLIC_API_URL}/${movie.posterUrl}` || null
-      );
+      setImagePreview(movie.posterUrl ? movie.posterUrl : null);
       resetForm({
         title: movie.title || "",
         publishedYear: movie.publishedYear || "",
@@ -59,7 +64,91 @@ const UpsertMovie = ({ mode, movie }: UpsertMovieProps) => {
         id: movie.id || "",
       });
     }
-  }, [movie, mode, resetForm]);
+  }, [movie, mode, resetForm, movieData]);
+
+  const addMovieAPICall = useMutation({
+    mutationFn: async (data: z.infer<typeof UpsertMovieSchema>) => {
+      formDataRef.current = new FormData();
+      formDataRef.current.append("title", data.title || "");
+      formDataRef.current.append(
+        "publishedYear",
+        data.publishedYear?.toString() || ""
+      );
+      if (data.poster) {
+        formDataRef.current.append("poster", data.poster);
+      }
+      try {
+        const response = await axiosInstance.post(
+          `${process.env.NEXT_PUBLIC_API_URL}/movies/add`,
+          formDataRef.current,
+          {
+            headers: {
+              "Content-Type": "multipart/form-data",
+            },
+          }
+        );
+        if (response.status == 200 || response.status == 201) {
+          toast.success("Movie added successfully", { autoClose: 1000 });
+        }
+      } catch (error: unknown) {
+        if (error && typeof error === "object" && "response" in error) {
+          const errorResponse = (error as { response: { status: number } })
+            .response;
+          if (errorResponse.status == 400) {
+            toast.error("Bad Request", { autoClose: 1000 });
+          } else if (errorResponse.status == 409) {
+            toast.error("Movie already exists", { autoClose: 1000 });
+          } else {
+            toast.error("Internal Server Error", { autoClose: 1000 });
+          }
+        } else {
+          toast.error("Some error occurred", { autoClose: 1000 });
+        }
+      }
+    },
+  });
+
+  const editMovieAPICall = useMutation({
+    mutationFn: async (data: z.infer<typeof UpsertMovieSchema>) => {
+      formDataRef.current = new FormData();
+      formDataRef.current.append("title", data.title || "");
+      formDataRef.current.append(
+        "publishedYear",
+        data.publishedYear?.toString() || ""
+      );
+      if (data.poster) {
+        formDataRef.current.append("poster", data.poster);
+      }
+      try {
+        const response = await axiosInstance.put(
+          `${process.env.NEXT_PUBLIC_API_URL}/movies/update/${movieData?.id}`,
+          formDataRef.current,
+          {
+            headers: {
+              "Content-Type": "multipart/form-data",
+            },
+          }
+        );
+        if (response.status == 200 || response.status == 201) {
+          toast.success("Movie updated successfully", { autoClose: 1000 });
+        }
+      } catch (error: unknown) {
+        if (error && typeof error === "object" && "response" in error) {
+          const errorResponse = (error as { response: { status: number } })
+            .response;
+          if (errorResponse.status == 400) {
+            toast.error("Bad Request", { autoClose: 1000 });
+          } else if (errorResponse.status == 404) {
+            toast.error("Movie not found", { autoClose: 1000 });
+          } else {
+            toast.error("Internal Server Error", { autoClose: 1000 });
+          }
+        } else {
+          toast.error("Some error occurred", { autoClose: 1000 });
+        }
+      }
+    },
+  });
 
   const handleImageUpload = (file: File) => {
     const reader = new FileReader();
@@ -100,90 +189,29 @@ const UpsertMovie = ({ mode, movie }: UpsertMovieProps) => {
   };
 
   const handleFormSubmit = (data: Movie) => {
-    formDataRef.current.delete("title");
-    formDataRef.current.delete("publishedYear");
-    formDataRef.current.set("title", data.title);
-    formDataRef.current.set("publishedYear", data.publishedYear.toString());
-    if (currentFile) {
-      formDataRef.current.delete("poster");
-      formDataRef.current.append("poster", currentFile);
-    }
     if (isEditMode) {
-      axiosInstance
-        .put(
-          `${process.env.NEXT_PUBLIC_API_URL}/movies/update/${movieData?.id}`,
-          formDataRef.current,
-          {
-            headers: {
-              "Content-Type": "multipart/form-data",
-            },
-          }
-        )
-        .then(() => {
-          toast.success("Movie details edited successfully", {
-            autoClose: 1000,
-          });
-        })
-        .catch((error) => {
-          if (error?.response) {
-            const errorResponse = error.response;
-            if (errorResponse.status == 400) {
-              toast.error("Bad Request", { autoClose: 1000 });
-            } else if (errorResponse.status == 404) {
-              toast.error("Movie not found", { autoClose: 1000 });
-            } else {
-              toast.error("Internal Server Error", { autoClose: 1000 });
-            }
-          } else {
-            toast.error("Some error occurred", { autoClose: 1000 });
-          }
-        })
-        .finally(() => {
-          router.push("/movies");
-        });
+      editMovieAPICall.mutate({
+        title: data.title,
+        publishedYear: data.publishedYear,
+        poster: currentFile || undefined,
+      });
     } else {
-      axiosInstance
-        .post(
-          `${process.env.NEXT_PUBLIC_API_URL}/movies/add`,
-          formDataRef.current,
-          {
-            headers: {
-              "Content-Type": "multipart/form-data",
-            },
-          }
-        )
-        .then(() => {
-          toast.success("Movie details added successfully", {
-            autoClose: 1000,
-          });
-        })
-        .catch((error) => {
-          if (error?.response) {
-            const errorResponse = error.response;
-            if (errorResponse.status == 400) {
-              toast.error("Bad Request", { autoClose: 1000 });
-            } else if (errorResponse.status == 409) {
-              toast.error("Movie already exists", { autoClose: 1000 });
-            } else {
-              toast.error("Internal Server Error", { autoClose: 1000 });
-            }
-          } else {
-            toast.error("Some error occurred", { autoClose: 1000 });
-          }
-        })
-        .finally(() => {
-          resetForm({
-            title: movieData?.title || "",
-            publishedYear: movieData?.publishedYear || "",
-            posterUrl: movieData?.posterUrl || "",
-            id: movieData?.id || "",
-          });
-          setImagePreview(null);
-          setCurrentFile(null);
-          formDataRef.current = new FormData();
-          router.push("/movies");
-        });
+      addMovieAPICall.mutate({
+        title: data.title,
+        publishedYear: data.publishedYear,
+        poster: currentFile || undefined,
+      });
     }
+    resetForm({
+      title: movieData?.title || "",
+      publishedYear: movieData?.publishedYear || "",
+      posterUrl: movieData?.posterUrl || "",
+      id: movieData?.id || "",
+    });
+    setImagePreview(null);
+    setCurrentFile(null);
+    formDataRef.current = new FormData();
+    router.push("/movies");
   };
 
   return (
