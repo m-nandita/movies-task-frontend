@@ -1,13 +1,14 @@
 "use client";
 
-import axiosInstance from "@/src/utils/axios";
-import Cookies from "js-cookie";
 import { toast } from "react-toastify";
 import { useForm } from "react-hook-form";
+import { useMutation } from "@tanstack/react-query";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
+import axiosInstance from "@/src/utils/axios";
+import Cookies from "js-cookie";
 
 const schema = z.object({
   email: z.string().min(5, "This field is required").email("Email is invalid"),
@@ -35,41 +36,40 @@ const SignInPage = () => {
     }
   }, [setValue]);
 
-  const handleFormSubmit = async (data: z.infer<typeof schema>) => {
-    axiosInstance
-      .post("/auth/login", {
-        email: data.email,
-        password: data.password,
-      })
-      .then((response) => {
-        const accessTokenExpiry = rememberMe ? 30 : 1;
-        const refreshTokenExpiry = rememberMe ? 30 : 7;
-
-        Cookies.set("accessToken", response.data.accessToken, {
-          expires: accessTokenExpiry,
-          path: "/",
-          secure: true,
-          sameSite: "Lax",
+  const loginAPICall = useMutation({
+    mutationFn: async (data: z.infer<typeof schema>) => {
+      try {
+        const response = await axiosInstance.post("/auth/login", {
+          email: data.email,
+          password: data.password,
         });
-        Cookies.set("refreshToken", response.data.refreshToken, {
-          expires: refreshTokenExpiry,
-          path: "/",
-          secure: true,
-          sameSite: "Lax",
-        });
-
-        if (rememberMe) {
-          localStorage.setItem("rememberedEmail", data.email);
-        } else {
-          localStorage.removeItem("rememberedEmail");
+        if (response.status == 200 || response.status == 201) {
+          const accessTokenExpiry = rememberMe ? 30 : 1;
+          const refreshTokenExpiry = rememberMe ? 30 : 7;
+          Cookies.set("accessToken", response.data.accessToken, {
+            expires: accessTokenExpiry,
+            path: "/",
+            secure: true,
+            sameSite: "Lax",
+          });
+          Cookies.set("refreshToken", response.data.refreshToken, {
+            expires: refreshTokenExpiry,
+            path: "/",
+            secure: true,
+            sameSite: "Lax",
+          });
+          if (rememberMe) {
+            localStorage.setItem("rememberedEmail", response.data.user.email);
+          } else {
+            localStorage.removeItem("rememberedEmail");
+          }
+          router.push("/movies");
+          toast.success("Login Successful", { autoClose: 1000 });
         }
-
-        toast.success("Login Successful", { autoClose: 1000 });
-        router.push("/movies");
-      })
-      .catch((error) => {
-        if (error?.response) {
-          const errorResponse = error.response;
+      } catch (error: unknown) {
+        if (error && typeof error === "object" && "response" in error) {
+          const errorResponse = (error as { response: { status: number } })
+            .response;
           if (errorResponse.status == 400) {
             toast.error("Bad Request", { autoClose: 1000 });
           } else if (errorResponse.status == 401) {
@@ -82,8 +82,9 @@ const SignInPage = () => {
         } else {
           toast.error("Some error occured", { autoClose: 1000 });
         }
-      });
-  };
+      }
+    },
+  });
 
   const handleRememberMeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const isChecked = e.target.checked;
@@ -96,7 +97,12 @@ const SignInPage = () => {
   return (
     <div className="h-full w-full flex items-center justify-center relative">
       <div className="relative z-10 w-full max-w-md px-8">
-        <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-6">
+        <form
+          onSubmit={handleSubmit((data) =>
+            loginAPICall.mutate({ email: data.email, password: data.password })
+          )}
+          className="space-y-6"
+        >
           <h1 className="text-6xl font-bold text-center mb-8">Sign in</h1>
 
           <div>

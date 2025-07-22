@@ -1,17 +1,26 @@
 "use client";
 
+import { Store } from "@tanstack/store";
+import { toast } from "react-toastify";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { toast } from "react-toastify";
+import { useQuery } from "@tanstack/react-query";
 import axiosInstance from "@/src/utils/axios";
 import Cookies from "js-cookie";
 import Image from "next/image";
 import z from "zod";
 
+export const movieStore = new Store({
+  id: "",
+  title: "",
+  publishedYear: "",
+  posterUrl: "",
+});
+
 const MovieSchema = z.object({
   id: z.string().optional(),
-  title: z.string().min(1, "Title is required"),
-  publishedYear: z.string().min(1, "Published year is required"),
+  title: z.string().min(1, "Title is required").optional(),
+  publishedYear: z.string().min(1, "Published year is required").optional(),
   posterUrl: z.string().optional(),
 });
 
@@ -23,26 +32,57 @@ const MoviesPage = () => {
   const [totalMovies, setTotalMovies] = useState(0);
   const moviesPerPage = 8;
   const router = useRouter();
-
   const totalPages = Math.ceil(totalMovies / moviesPerPage);
 
-  const handleLogout = () => {
-    Cookies.remove("accessToken");
-    Cookies.remove("refreshToken");
-    router.push("/sign-in");
-    toast.success("Logged out successfully", { autoClose: 1000 });
-  };
+  const logoutAPICall = useQuery({
+    queryKey: ["logout"],
+    queryFn: async () => {
+      try {
+        const response = await axiosInstance.get(`/auth/logout`);
+        if (response.status == 200 || response.status == 201) {
+          Cookies.remove("accessToken");
+          Cookies.remove("refreshToken");
+          router.push("/sign-in");
+          toast.success("Logged out successfully", { autoClose: 1000 });
+          return response.data;
+        }
+      } catch (error: unknown) {
+        if (error && typeof error === "object" && "response" in error) {
+          const errorResponse = (error as { response: { status: number } })
+            .response;
+          if (errorResponse.status == 400) {
+            toast.error("Bad Request", { autoClose: 1000 });
+          } else if (errorResponse.status == 500) {
+            toast.error("Internal Server Error", { autoClose: 1000 });
+          } else {
+            toast.error("Failed to logout", { autoClose: 1000 });
+          }
+        } else {
+          toast.error("Some error occured", { autoClose: 1000 });
+        }
+      }
+    },
+    enabled: false,
+  });
 
-  useEffect(() => {
-    axiosInstance
-      .get(`/movies?page=${currentPage}&limit=${moviesPerPage}`)
-      .then((res) => {
-        setMovies(res.data.movies);
-        setTotalMovies(res.data.total);
-      })
-      .catch((error) => {
-        if (error?.response) {
-          const errorResponse = error.response;
+  const moviesAPICall = useQuery({
+    queryKey: ["movies", currentPage, moviesPerPage],
+    queryFn: async () => {
+      try {
+        const response = await axiosInstance.get(
+          `/movies?page=${currentPage}&limit=${moviesPerPage}`
+        );
+        if (response.status == 200 || response.status == 201) {
+          if (response.data && response.data.movies && response.data.total) {
+            setMovies(response.data.movies || []);
+            setTotalMovies(response.data.total || 0);
+            return response.data;
+          }
+        }
+      } catch (error: unknown) {
+        if (error && typeof error === "object" && "response" in error) {
+          const errorResponse = (error as { response: { status: number } })
+            .response;
           if (errorResponse.status == 400) {
             toast.error("Bad Request", { autoClose: 1000 });
           } else if (errorResponse.status == 404) {
@@ -53,8 +93,27 @@ const MoviesPage = () => {
         } else {
           toast.error("Some error occured", { autoClose: 1000 });
         }
-      });
+        return [];
+      }
+    },
+  });
+
+  useEffect(() => {
+    moviesAPICall.refetch();
   }, [currentPage]);
+
+  const handleMovieClick = (movie: Movie) => {
+    movieStore.setState(() => {
+      return {
+        id: movie.id || "",
+        title: movie.title || "",
+        publishedYear: movie.publishedYear || "",
+        posterUrl:
+          `${process.env.NEXT_PUBLIC_API_URL}/${movie.posterUrl}` || "",
+      };
+    });
+    router.push(`/movies/${movie.id}`);
+  };
 
   return (
     <div className="h-full w-full bg-gradient-to-b relative">
@@ -88,7 +147,7 @@ const MoviesPage = () => {
             </div>
           ) : null}
           <button
-            onClick={handleLogout}
+            onClick={() => logoutAPICall.refetch()}
             className="flex flex-1 justify-end items-center gap-3 cursor-pointer"
           >
             Logout
@@ -131,7 +190,7 @@ const MoviesPage = () => {
               {movies?.map((movie) => (
                 <div
                   key={movie.id}
-                  onClick={() => router.push(`/movies/${movie.id}`)}
+                  onClick={() => handleMovieClick(movie)}
                   style={{
                     backgroundColor: "#092C39",
                     width: "240px",
@@ -144,13 +203,14 @@ const MoviesPage = () => {
                 >
                   <Image
                     src={`${process.env.NEXT_PUBLIC_API_URL}/${movie.posterUrl}`}
-                    alt={movie.title}
+                    alt={movie.title || ""}
                     width={240}
                     height={400}
                     style={{
                       objectFit: "cover",
                       borderRadius: "12px",
                       overflow: "hidden",
+                      height: "-webkit-fill-available",
                     }}
                   />
                   <div
@@ -188,7 +248,6 @@ const MoviesPage = () => {
                 </div>
               ))}
             </div>
-
             <div className="flex justify-center items-center gap-4">
               <button
                 onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
